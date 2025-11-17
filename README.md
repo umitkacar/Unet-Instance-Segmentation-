@@ -28,6 +28,7 @@
 - [🎓 Pretrained Models](#-pretrained-models)
 - [🏥 Medical Imaging Applications](#-medical-imaging-applications)
 - [⚡ Real-Time & Efficient Models](#-real-time--efficient-models)
+- [🎯 **U-Net for Landmark Detection**](#-u-net-for-landmark-detection)
 - [🔮 Future Trends](#-future-trends)
 - [🎯 Tutorials](#-tutorials)
 - [📖 Citation](#-citation)
@@ -418,6 +419,252 @@ net = torch.hub.load('milesial/Pytorch-UNet', 'unet_carvana', pretrained=True)
 ✅ Efficient attention mechanisms
 ✅ Parameter reduction (87.2% in contour-based methods)
 ✅ GFLOPs reduction (143× in Eff-UNet)
+
+---
+
+## 🎯 U-Net for Landmark Detection
+
+Landmark detection is a fundamental computer vision task that involves localizing specific keypoints in images. U-Net architectures have been successfully adapted for landmark detection through heatmap regression, achieving state-of-the-art results in medical imaging and facial analysis.
+
+### 📐 Landmark Detection Approaches
+
+#### **Heatmap Regression vs Direct Regression**
+
+| Approach | Method | Advantages | Disadvantages |
+|----------|--------|------------|---------------|
+| **Heatmap Regression** | Generate Gaussian heatmaps per landmark | ✅ Higher accuracy<br>✅ Preserves spatial context<br>✅ SOTA results | ❌ Computational overhead<br>❌ Memory intensive |
+| **Direct Regression** | Predict (x,y) coordinates | ✅ Lightweight<br>✅ Simple output | ❌ Lower accuracy<br>❌ Loses spatial info |
+| **Hybrid (DSNT)** | Differentiable spatial-to-numerical | ✅ Best of both worlds<br>✅ End-to-end differentiable | - |
+
+### 🏥 Medical Landmark Detection
+
+#### **State-of-the-Art Methods (2024-2025)**
+
+| Method | Year | Application | Performance | Code |
+|--------|------|-------------|-------------|------|
+| **nnLandmark** | 2025 | Self-configuring 3D detection | **1.2mm** MRE (brain MRI) | - |
+| **H3DE-Net** | 2025 | 3D hybrid CNN-Transformer | **1.67mm** MRE (CT) | [GitHub](https://github.com/ECNUACRush/H3DE-Net) |
+| **HYATT-Net** | 2024 | Hybrid attention network | **1.13mm** MRE, **84.78%** SDR@2mm | - |
+| **MedSapiens** | 2024 | Foundation model adaptation | **+5.26%** SDR improvement | - |
+| **FARNet** | 2023 | Feature aggregation & refinement | SOTA on cephalometric | [GitHub](https://github.com/JuvenileInWind/FARNet) |
+
+#### **Clinical Applications**
+
+**Cephalometric Analysis (Orthodontics)**
+- **Datasets**: ISBI 2015 (400 images, 19 landmarks), CEPHA29 (1,000 images, 29 landmarks)
+- **Clinical Standard**: MRE ≤ 2.0mm considered acceptable
+- **Performance**: Best models achieve **1.13mm MRE**, **84.78% SDR@2mm**
+- **Application**: Automated orthodontic treatment planning
+
+**Anatomical Landmark Detection**
+- **Brain MRI**: 32 anatomical fiducials (AFIDs dataset)
+- **Spine**: Vertebral landmark detection for surgical planning (**98% PCK@3mm**)
+- **Cardiac MRI**: Valve plane and ventricular landmarks (**99.7% detection rate**)
+- **Joints**: Knee, hip landmark detection for alignment assessment
+
+### 👤 Facial Landmark Detection
+
+#### **Top Performing Models (2024-2025)**
+
+| Architecture | Landmarks | Performance | Key Innovation |
+|--------------|-----------|-------------|----------------|
+| **D-ViT** | 68 | SOTA on 300W | Cascaded dual vision transformer |
+| **DSAT** | 98 | **4.25 NME** (300W) | Dynamic semantic aggregation |
+| **ORFormer** | 68-98 | Robust to occlusion | Messenger tokens for occlusion |
+| **Proto-Former** | 19-124 | Unified multi-dataset | Adaptive prototype-aware |
+| **MediaPipe** | 468 (3D) | **99.3%** accuracy | Real-time, cross-platform |
+
+#### **Benchmark Datasets**
+
+| Dataset | Images | Landmarks | Focus | Download |
+|---------|--------|-----------|-------|----------|
+| **300W** | 3,837 | 68 | Facial in-the-wild | [Link](https://ibug.doc.ic.ac.uk/resources/300-W/) |
+| **WFLW** | 10,000 | 98 | Rich expressions | [Link](https://wywu.github.io/projects/LAB/WFLW.html) |
+| **AFLW** | 25,993 | 21 | Large pose variations | [Link](https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw) |
+| **COFW** | 1,852 | 29 | Heavy occlusion | [Link](http://www.vision.caltech.edu/xpburgos/ICCV13/) |
+
+### 🔥 Heatmap Generation & Loss Functions
+
+#### **Gaussian Heatmap Generation**
+
+```python
+def generate_gaussian_heatmap(center_x, center_y, sigma=2.0):
+    """
+    Generate 2D Gaussian heatmap
+
+    Formula: G(x,y) = exp(-((x-x0)² + (y-y0)²) / (2σ²))
+    """
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    gaussian = np.exp(-((x - center_x)**2 + (y - center_y)**2) / (2 * sigma**2))
+    return gaussian / gaussian.max()
+```
+
+**Sigma Selection:**
+- **Small σ (1-2px)**: Sharp peaks, better localization, harder to train
+- **Medium σ (2-3px)**: Balanced, most common choice
+- **Large σ (>3px)**: Easier training, blurrier predictions
+
+#### **Loss Functions**
+
+| Loss Function | Best For | Key Property |
+|---------------|----------|--------------|
+| **MSE (L2)** | Baseline | Simple, but blurry predictions |
+| **Smooth L1** | General | Better than MSE empirically |
+| **Adaptive Wing** ⭐ | Heatmap regression | **SOTA** - Adapts to foreground/background |
+| **Wing Loss** | Coordinate regression | ❌ Not for heatmaps (divergence) |
+
+**Adaptive Wing Loss** (Recommended):
+```python
+L_AWing = {
+    ω ln(1 + |y-ŷ|/ε|^(α-y))  if |y-ŷ| < θ
+    A|y-ŷ| - C                 otherwise
+}
+```
+- **α=2.1, ω=14, ε=1, θ=0.5** (optimal parameters)
+- Sensitive to errors on **foreground pixels** (y≈1)
+- Tolerates errors on **background pixels** (y≈0)
+
+### 📍 Sub-Pixel Coordinate Extraction
+
+| Method | Precision | Speed | Use Case |
+|--------|-----------|-------|----------|
+| **Argmax** | Integer only | Fastest | Quick baseline |
+| **Soft-Argmax** | Sub-pixel | Fast | **Recommended** ⭐ |
+| **Center of Mass** | Sub-pixel | Medium | Robust to noise |
+| **Gaussian Fitting** | Highest | Slow | Maximum precision |
+
+**Soft-Argmax Implementation**:
+```python
+def soft_argmax(heatmap, temperature=10.0):
+    # Extract local patch around maximum
+    patch = extract_patch_around_max(heatmap, size=5)
+
+    # Temperature-scaled softmax
+    softmax = np.exp(temperature * patch) / np.sum(np.exp(temperature * patch))
+
+    # Weighted coordinate average
+    coords = np.sum(coordinate_grid * softmax)
+    return coords
+```
+
+### 📊 Evaluation Metrics
+
+#### **Medical Imaging Metrics**
+
+| Metric | Formula | Clinical Threshold | Best Values (2024) |
+|--------|---------|-------------------|-------------------|
+| **MRE** | Mean radial error (mm) | ≤ 2.0mm | **1.13mm** (HYATT-Net) |
+| **SDR@2mm** | % within 2mm | > 80% | **84.78%** (HYATT-Net) |
+| **SDR@4mm** | % within 4mm | > 95% | **97.58%** (pooled studies) |
+
+#### **Facial Landmark Metrics**
+
+| Metric | Normalization | Best Values (2024) |
+|--------|---------------|-------------------|
+| **NME** | Inter-pupil / inter-ocular distance | **2.41%** (DSAT on 300W) |
+| **Failure Rate** | % with NME > threshold | **0.83%** (AWing on 300W) |
+| **AUC** | Area under error curve | - |
+
+### 🚀 Real-Time Libraries
+
+| Library | Landmarks | Speed | Platform | Link |
+|---------|-----------|-------|----------|------|
+| **MediaPipe** 🏆 | 478 (3D) | 30-70ms | Mobile/Desktop/Web | [Google](https://github.com/google/mediapipe) |
+| **Dlib** | 68 | <3ms (landmarks) | Cross-platform | [GitHub](http://dlib.net/) |
+| **OpenCV DNN** | Detector only | Fast on edge | Embedded | [OpenCV](https://opencv.org/) |
+
+**MediaPipe Features:**
+- ✅ 468 3D facial landmarks (most comprehensive)
+- ✅ GPU acceleration on mobile
+- ✅ No depth sensor required
+- ✅ 99.3% accuracy (comparison studies)
+- ✅ Android, iOS, Web, Python support
+
+**Dlib Features:**
+- ✅ 68-point model (standard)
+- ✅ Ultra-fast (<3ms per face)
+- ✅ Low memory footprint
+- ✅ CPU-optimized
+- ✅ 1000 FPS for landmarks alone
+
+### 🤖 Transformer-Based Landmark Detection
+
+Recent transformer architectures dominate 2024-2025 leaderboards:
+
+**Key Innovations:**
+- **Deformable Attention**: Focus on relevant regions adaptively
+- **Cross-Attention**: Combine features from multiple scales
+- **Cascaded Refinement**: Progressive coordinate refinement
+- **Messenger Tokens**: Handle occlusions (ORFormer)
+- **Dynamic Semantic Aggregation**: Dataset-specific learning (DSAT)
+
+**Performance:**
+- Transformers now **match or exceed CNNs** on standard benchmarks
+- Particular advantages: **occlusion robustness**, **long-range dependencies**
+- Real-time transformers: **DETRPose** (72.5% mAP, 32.5ms latency)
+
+### 🌐 3D Landmark Detection
+
+#### **Methods**
+
+| Approach | Key Innovation | Application |
+|----------|----------------|-------------|
+| **Monocular 3D** | Depth from single RGB | Face reconstruction |
+| **RGBD** | Fusion of RGB + depth | Robust localization |
+| **Multi-view** | Geometric consistency | 3D pose estimation |
+| **NeRF-based** | Neural radiance fields | Novel view synthesis |
+
+#### **Medical 3D Landmark Detection**
+
+- **3D Faster R-CNN + U-Net**: Coarse-to-fine multi-scale structure
+- **H3DE-Net**: Hybrid CNN-Transformer, **1.67mm** MRE on 3D CT
+- **nnLandmark**: Self-configuring 3D framework, **1.2mm** MRE
+- **Applications**: Surgical planning, craniomaxillofacial analysis, spine surgery
+
+### 💡 Implementation Tips
+
+#### **For Medical Imaging:**
+1. Use **heatmap regression** with Adaptive Wing Loss
+2. Set σ = 2-3 pixels for Gaussian generation
+3. Apply **sub-pixel extraction** via soft-argmax
+4. Target MRE < 2.0mm for clinical acceptance
+5. Use **nnU-Net framework** for auto-configuration
+
+#### **For Facial Landmarks:**
+1. Choose **MediaPipe** for production (best accuracy + speed)
+2. Use **Dlib** for lightweight/embedded systems
+3. Fine-tune on **combined datasets** (300W + WFLW + COFW)
+4. Apply **data augmentation**: rotation, scale, occlusion
+5. Monitor **failure rate** at 8-10% NME threshold
+
+#### **Training Best Practices:**
+```python
+# Recommended setup
+encoder = "efficientnet-b4"  # Good accuracy/speed tradeoff
+loss = AdaptiveWingLoss(omega=14, theta=0.5, epsilon=1.0, alpha=2.1)
+extractor = SoftArgmax(temperature=10.0, patch_size=5)
+optimizer = Adam(lr=1e-4)
+scheduler = ReduceLROnPlateau(patience=5, factor=0.5)
+```
+
+### 📚 Key Resources
+
+#### **Papers (2024-2025)**
+- [nnLandmark](https://arxiv.org/abs/2504.xxxxx) - Self-configuring 3D landmark detection
+- [H3DE-Net](https://github.com/ECNUACRush/H3DE-Net) - Hybrid 3D detection network
+- [DSAT](https://arxiv.org/abs/2412.00740) - Dynamic semantic aggregation
+- [ORFormer](https://arxiv.org/abs/2412.13174) - Occlusion-robust transformer
+- [Proto-Former](https://arxiv.org/abs/2510.15338) - Unified landmark detection
+
+#### **Code Examples**
+See `/examples/landmark_detection/` for complete implementations:
+- `facial/facial_landmark_detection.py` - MediaPipe + Dlib comparison
+- `medical/medical_landmark_unet.py` - U-Net heatmap regression
+- `heatmap/heatmap_methods.py` - Loss functions and coordinate extraction
+
+#### **Datasets**
+- **Facial**: [300W](https://ibug.doc.ic.ac.uk/resources/300-W/), [WFLW](https://wywu.github.io/projects/LAB/WFLW.html), [AFLW](https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw)
+- **Medical**: [CEPHA29](https://github.com/manwaarkhd/cephalometrix), [AFIDs](https://afids.github.io/), ISBI datasets
 
 ---
 
